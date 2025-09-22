@@ -1,5 +1,5 @@
 # app/adapters/ssl_labs_adapter.py
-# Заглушка: у проді — API SSL Labs з полінгом
+# Mock: проверка SSL.
 
 from .base import CheckResult
 
@@ -10,10 +10,19 @@ class SSLLabsAdapter:
         domain = (query.get("website") or "").replace("https://", "").replace("http://", "").strip("/")
         if not domain:
             return {"status": "unknown", "data": {}, "source": self.SOURCE, "note": "domain not provided"}
+        
+        # Mock: хорошие оценки для известных
+        if domain in ["siemens.com", "siemens.de", "alliance.com"]:
+            grade = "A"
+            status = "ok"
+        else:
+            grade = "C"
+            status = "warning"
+        
         return {
-            "status": "ok",
+            "status": status,
             "data": {
-                "grade": "A",
+                "grade": grade,
                 "hostname": domain
             },
             "source": self.SOURCE,
