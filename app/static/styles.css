@@ -1,0 +1,9 @@
+/* app/static/styles.css */
+body { font-family: system-ui, Arial, sans-serif; margin: 0; padding: 0; }
+header, footer { background: #f4f4f4; padding: 10px 16px; }
+main { padding: 16px; }
+table { border-collapse: collapse; width: 100%; }
+td, th { border: 1px solid #ddd; padding: 8px; }
+label { display:block; margin: 8px 0; }
+button { padding: 6px 12px; }
+pre { white-space: pre-wrap; font-size: 12px; }

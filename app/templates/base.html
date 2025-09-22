@@ -1,0 +1,25 @@
+<!-- app/templates/base.html -->
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <title>{{ config.APP_NAME if config and config.APP_NAME else "Company Checker" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<header>
+  <h1>Company Checker</h1>
+  <nav>
+    <a href="{{ url_for('web.index') }}">Пошук</a> |
+    <a href="{{ url_for('web.companies_page') }}">Компанії</a>
+  </nav>
+</header>
+<main>
+  {% block content %}{% endblock %}
+</main>
+<footer>
+  <small>&copy; {{ 2025 }} – MVP для перевірки контрагентів</small>
+</footer>
+</body>
+</html>

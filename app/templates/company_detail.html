@@ -1,0 +1,30 @@
+<!-- app/templates/company_detail.html -->
+{% extends "base.html" %}
+{% block content %}
+<h2>Компанія #{{ company.id }}</h2>
+<ul>
+  <li><strong>Назва:</strong> {{ company.name }}</li>
+  <li><strong>VAT:</strong> {{ company.vat_number }}</li>
+  <li><strong>Країна:</strong> {{ company.country }}</li>
+  <li><strong>Адреса:</strong> {{ company.address }}</li>
+  <li><strong>Вебсайт:</strong> {{ company.website }}</li>
+  <li><strong>Статус:</strong> {{ company.current_status }}</li>
+  <li><strong>Score:</strong> {{ company.confidence_score }}</li>
+  <li><strong>Остання перевірка:</strong> {{ company.last_checked or '—' }}</li>
+</ul>
+
+<h3>Останні перевірки</h3>
+<table>
+  <thead><tr><th>Джерело</th><th>Статус</th><th>Дата</th><th>Дані</th></tr></thead>
+  <tbody>
+  {% for chk in checks %}
+    <tr>
+      <td>{{ chk.check_type }}</td>
+      <td>{{ chk.status }}</td>
+      <td>{{ chk.created_at }}</td>
+      <td><pre>{{ chk.result | tojson(indent=2) }}</pre></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,26 @@
+<!-- app/templates/companies.html -->
+{% extends "base.html" %}
+{% block content %}
+<h2>Компанії</h2>
+<form method="get">
+  <input type="text" name="q" placeholder="Назва або VAT" value="{{ q }}">
+  <button type="submit">Шукати</button>
+</form>
+<table>
+  <thead>
+    <tr><th>ID</th><th>Назва</th><th>VAT</th><th>Статус</th><th>Score</th><th>Остання перевірка</th></tr>
+  </thead>
+  <tbody>
+  {% for c in companies %}
+    <tr>
+      <td><a href="{{ url_for('web.company_detail', company_id=c.id) }}">{{ c.id }}</a></td>
+      <td>{{ c.name }}</td>
+      <td>{{ c.vat_number }}</td>
+      <td>{{ c.current_status }}</td>
+      <td>{{ c.confidence_score }}</td>
+      <td>{{ c.last_checked or '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
