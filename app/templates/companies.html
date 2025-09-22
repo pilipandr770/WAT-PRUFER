@@ -1,14 +1,14 @@
 <!-- app/templates/companies.html -->
 {% extends "base.html" %}
 {% block content %}
-<h2>Компанії</h2>
+<h2>Unternehmen</h2>
 <form method="get">
-  <input type="text" name="q" placeholder="Назва або VAT" value="{{ q }}">
-  <button type="submit">Шукати</button>
+  <input type="text" name="q" placeholder="Name oder USt-ID" value="{{ q }}">
+  <button type="submit">Suchen</button>
 </form>
 <table>
   <thead>
-    <tr><th>ID</th><th>Назва</th><th>VAT</th><th>Статус</th><th>Score</th><th>Остання перевірка</th></tr>
+    <tr><th>ID</th><th>Name</th><th>USt-ID</th><th>Status</th><th>Score</th><th>Letzte Überprüfung</th></tr>
   </thead>
   <tbody>
   {% for c in companies %}

@@ -1,23 +1,23 @@
 <!-- app/templates/index.html -->
 {% extends "base.html" %}
 {% block content %}
-<h2>Перевірка контрагента</h2>
+<h2>Geschäftspartner überprüfen</h2>
 <form method="post" action="{{ url_for('web.web_lookup') }}">
-  <label>VAT номер:
+  <label>Umsatzsteuer-Identifikationsnummer:
     <input type="text" name="vat_number" placeholder="DE123456789">
   </label>
-  <label>Назва компанії:
-    <input type="text" name="name" placeholder="Sample GmbH">
+  <label>Unternehmensname:
+    <input type="text" name="name" placeholder="Beispiel GmbH">
   </label>
-  <label>Країна (ISO2):
+  <label>Land (ISO2):
     <input type="text" name="country" placeholder="DE">
   </label>
-  <label>Адреса:
+  <label>Adresse:
     <input type="text" name="address" placeholder="Straße 1, Stadt">
   </label>
-  <label>Вебсайт:
-    <input type="text" name="website" placeholder="example.de">
+  <label>Website:
+    <input type="text" name="website" placeholder="beispiel.de">
   </label>
-  <button type="submit">Перевірити</button>
+  <button type="submit">Überprüfen</button>
 </form>
 {% endblock %}

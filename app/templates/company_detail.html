@@ -1,30 +1,57 @@
 <!-- app/templates/company_detail.html -->
 {% extends "base.html" %}
 {% block content %}
-<h2>Компанія #{{ company.id }}</h2>
+<h2>Unternehmen #{{ company.id }}</h2>
 <ul>
-  <li><strong>Назва:</strong> {{ company.name }}</li>
-  <li><strong>VAT:</strong> {{ company.vat_number }}</li>
-  <li><strong>Країна:</strong> {{ company.country }}</li>
-  <li><strong>Адреса:</strong> {{ company.address }}</li>
-  <li><strong>Вебсайт:</strong> {{ company.website }}</li>
-  <li><strong>Статус:</strong> {{ company.current_status }}</li>
-  <li><strong>Score:</strong> {{ company.confidence_score }}</li>
-  <li><strong>Остання перевірка:</strong> {{ company.last_checked or '—' }}</li>
+  <li><strong>Name:</strong> {{ company.name }}</li>
+  <li><strong>USt-ID:</strong> {{ company.vat_number }}</li>
+  <li><strong>Land:</strong> {{ company.country }}</li>
+  <li><strong>Adresse:</strong> {{ company.address }}</li>
+  <li><strong>Website:</strong> {{ company.website }}</li>
+  <li><strong>Status:</strong> 
+    <span class="status {{ 'ok' if company.current_status == 'ok' else 'warning' if company.current_status == 'warning' else 'critical' }}">
+      {{ 'OK' if company.current_status == 'ok' else 'Warnung' if company.current_status == 'warning' else 'Kritisch' if company.current_status == 'critical' else 'Unbekannt' }}
+    </span>
+  </li>
+  <li><strong>Konfidenz-Score:</strong> {{ company.confidence_score }}/100</li>
+  <li><strong>Letzte Überprüfung:</strong> {{ company.last_checked or '—' }}</li>
 </ul>
 
-<h3>Останні перевірки</h3>
-<table>
-  <thead><tr><th>Джерело</th><th>Статус</th><th>Дата</th><th>Дані</th></tr></thead>
-  <tbody>
-  {% for chk in checks %}
-    <tr>
-      <td>{{ chk.check_type }}</td>
-      <td>{{ chk.status }}</td>
-      <td>{{ chk.created_at }}</td>
-      <td><pre>{{ chk.result | tojson(indent=2) }}</pre></td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<h3>Überprüfungsergebnisse</h3>
+{% for chk in checks %}
+<div class="check-result">
+  <h4>{{ chk.check_type | title }}</h4>
+  <p><strong>Status:</strong> 
+    <span class="status {{ 'ok' if chk.status == 'ok' else 'warning' if chk.status == 'warning' else 'critical' }}">
+      {{ 'OK' if chk.status == 'ok' else 'Warnung' if chk.status == 'warning' else 'Kritisch' if chk.status == 'critical' else 'Unbekannt' }}
+    </span>
+  </p>
+  {% if chk.result %}
+    {% if chk.check_type == 'vies' %}
+      <p><strong>USt-ID:</strong> {{ chk.result.vat_number or '—' }}</p>
+      <p><strong>Name:</strong> {{ chk.result.name or '—' }}</p>
+      <p><strong>Adresse:</strong> {{ chk.result.address or '—' }}</p>
+    {% elif chk.check_type == 'sanctions_eu' %}
+      <p><strong>Übereinstimmungs-Score:</strong> {{ chk.result.match_score or '—' }}</p>
+    {% elif chk.check_type == 'sanctions_ofac' %}
+      <p><strong>Übereinstimmungs-Score:</strong> {{ chk.result.match_score or '—' }}</p>
+    {% elif chk.check_type == 'sanctions_uk' %}
+      <p><strong>Übereinstimmungs-Score:</strong> {{ chk.result.match_score or '—' }}</p>
+    {% elif chk.check_type == 'unternehmensregister' %}
+      <p><strong>Register:</strong> {{ chk.result.registry or '—' }}</p>
+      <p><strong>Bekanntmachungen:</strong> {{ chk.result.notices | length if chk.result.notices else 0 }}</p>
+    {% elif chk.check_type == 'insolvenz' %}
+      <p><strong>Insolvenz-Aufzeichnungen:</strong> {{ chk.result.insolvency_records | length if chk.result.insolvency_records else 0 }}</p>
+    {% elif chk.check_type == 'whois' %}
+      <p><strong>Domain:</strong> {{ chk.result.domain or '—' }}</p>
+      <p><strong>Erstellt:</strong> {{ chk.result.created or '—' }}</p>
+      <p><strong>Registrar:</strong> {{ chk.result.registrar or '—' }}</p>
+    {% elif chk.check_type == 'ssl_labs' %}
+      <p><strong>Note:</strong> {{ chk.result.grade or '—' }}</p>
+      <p><strong>Hostname:</strong> {{ chk.result.hostname or '—' }}</p>
+    {% endif %}
+  {% endif %}
+  <p><small>Datum: {{ chk.created_at }}</small></p>
+</div>
+{% endfor %}
 {% endblock %}

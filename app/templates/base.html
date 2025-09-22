@@ -1,6 +1,6 @@
 <!-- app/templates/base.html -->
 <!doctype html>
-<html lang="uk">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <title>{{ config.APP_NAME if config and config.APP_NAME else "Company Checker" }}</title>
@@ -11,15 +11,15 @@
 <header>
   <h1>Company Checker</h1>
   <nav>
-    <a href="{{ url_for('web.index') }}">Пошук</a> |
-    <a href="{{ url_for('web.companies_page') }}">Компанії</a>
+    <a href="{{ url_for('web.index') }}">Suche</a> |
+    <a href="{{ url_for('web.companies_page') }}">Unternehmen</a>
   </nav>
 </header>
 <main>
   {% block content %}{% endblock %}
 </main>
 <footer>
-  <small>&copy; {{ 2025 }} – MVP для перевірки контрагентів</small>
+  <small>&copy; {{ 2025 }} – MVP für die Überprüfung von Geschäftspartnern</small>
 </footer>
 </body>
 </html>
