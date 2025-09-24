@@ -2,12 +2,23 @@
 # Простий UI на Jinja2: форма пошуку, список, деталі
 
 from flask import Blueprint, render_template, request, redirect, url_for, current_app
-from ..models import Company, Check
+from ..models import Company, Check, CheckResult
 from ..extensions import db
 from ..services.normalizer import normalize_company_query
-from ..workers.tasks import _run_checks
+from ..workers.tasks import _run_checks, run_full_check_task
 
 web_bp = Blueprint("web", __name__)
+
+def aggregate_results(results):
+    statuses = [result['status'] for result in results.values()]
+    if 'critical' in statuses:
+        return 'critical'
+    elif 'error' in statuses:
+        return 'error'
+    elif 'ok' in statuses:
+        return 'ok'
+    else:
+        return 'unknown'
 
 @web_bp.get("/")
 def index():
@@ -26,14 +37,35 @@ def web_lookup():
             country=q.get("country"),
             address=q.get("address"),
             website=q.get("website"),
+            requester_name=q.get("requester_name"),
+            requester_email=q.get("requester_email"),
+            requester_org=q.get("requester_org"),
             current_status="unknown",
             confidence_score=0,
             raw_source={},
         )
         db.session.add(company)
         db.session.commit()
+    else:
+        # update requester info if provided
+        changed = False
+        if q.get("requester_name") and not company.requester_name:
+            company.requester_name = q.get("requester_name")
+            changed = True
+        if q.get("requester_email") and not company.requester_email:
+            company.requester_email = q.get("requester_email")
+            changed = True
+        if q.get("requester_org") and not company.requester_org:
+            company.requester_org = q.get("requester_org")
+            changed = True
+        if changed:
+            db.session.add(company)
+            db.session.commit()
 
-    _run_checks(company.id)
+    # enqueue full check task to run in background (or run synchronously if Celery
+    # wrapper isn't registered yet, e.g. during tests)
+    task_caller = getattr(run_full_check_task, 'delay', run_full_check_task)
+    task_caller(company.id)
     return redirect(url_for("web.company_detail", company_id=company.id))
 
 @web_bp.get("/companies")
@@ -49,5 +81,5 @@ def companies_page():
 @web_bp.get("/companies/<int:company_id>")
 def company_detail(company_id: int):
     c = Company.query.get_or_404(company_id)
-    checks = Check.query.filter_by(company_id=company_id).order_by(Check.created_at.desc()).all()
-    return render_template("company_detail.html", company=c, checks=checks)
+    check = Check.query.filter_by(company_id=company_id).order_by(Check.created_at.desc()).first()
+    return render_template("company_detail.html", company=c, check=check)

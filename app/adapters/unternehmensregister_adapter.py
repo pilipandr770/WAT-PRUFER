@@ -2,32 +2,13 @@
 # Mock: проверка в Unternehmensregister.
 
 from .base import CheckResult
+from flask import current_app
+
 
 class UnternehmensregisterAdapter:
     SOURCE = "unternehmensregister"
 
-    KNOWN_COMPANIES = {
-        "siemens ag": {"registry": "HRB 12345, Amtsgericht München", "notices": [{"date": "2024-01-01", "title": "Jahresabschluss"}]},
-        "alliance": {"registry": "HRB 67890, Amtsgericht Berlin", "notices": []}
-    }
-
     def fetch(self, query: dict) -> CheckResult:
-        name = (query.get("name") or "").strip().lower()
-        if not name:
-            return {"status": "unknown", "data": {}, "source": self.SOURCE, "note": "name not provided"}
-        
-        if name in self.KNOWN_COMPANIES:
-            data = self.KNOWN_COMPANIES[name]
-            return {
-                "status": "ok",
-                "data": data,
-                "source": self.SOURCE,
-                "note": "Mocked Unternehmensregister response"
-            }
-        else:
-            return {
-                "status": "unknown",
-                "data": {"registry": "", "notices": []},
-                "source": self.SOURCE,
-                "note": "Company not found in register"
-            }
+        if not (current_app and current_app.config.get('UNTERNEHMENSREGISTER_ENABLED')):
+            return {"status": "error", "data": {}, "source": self.SOURCE, "note": "Unternehmensregister adapter not enabled or not configured"}
+        return {"status": "error", "data": {}, "source": self.SOURCE, "note": "Adapter enabled but not implemented - configure a real Unternehmensregister data source"}

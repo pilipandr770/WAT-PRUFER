@@ -3,21 +3,62 @@
 {% block content %}
 <h2>Geschäftspartner überprüfen</h2>
 <form method="post" action="{{ url_for('web.web_lookup') }}">
-  <label>Umsatzsteuer-Identifikationsnummer:
-    <input type="text" name="vat_number" placeholder="DE123456789">
-  </label>
-  <label>Unternehmensname:
-    <input type="text" name="name" placeholder="Beispiel GmbH">
-  </label>
-  <label>Land (ISO2):
-    <input type="text" name="country" placeholder="DE">
-  </label>
-  <label>Adresse:
-    <input type="text" name="address" placeholder="Straße 1, Stadt">
-  </label>
-  <label>Website:
-    <input type="text" name="website" placeholder="beispiel.de">
-  </label>
-  <button type="submit">Überprüfen</button>
+  <h3>Angaben zum zu prüfenden Unternehmen</h3>
+  <p class="muted">Tragen Sie hier die Daten des Unternehmens ein, das Sie prüfen möchten. Mindestens die USt‑ID oder der Firmenname sind hilfreich.</p>
+  <div class="form-row">
+    <label>Umsatzsteuer‑Identifikationsnummer (USt‑ID):
+      <input id="vat_number" type="text" name="vat_number" placeholder="z. B. DE123456789">
+      <small class="muted">Wenn vorhanden, unbedingt angeben — VIES liefert zuverlässige Firmeninformationen.</small>
+    </label>
+    <label>Firmenname:
+      <input id="name" type="text" name="name" placeholder="z. B. Beispiel GmbH">
+      <small class="muted">Mindestens USt‑ID oder Firmenname erforderlich.</small>
+    </label>
+  </div>
+  <div class="form-row">
+    <label>Land (ISO2):
+      <input type="text" name="country" placeholder="z. B. DE">
+    </label>
+    <label>Adresse des Unternehmens:
+      <input type="text" name="address" placeholder="Straße 1, 12345 Stadt">
+    </label>
+  </div>
+  <div class="form-row">
+    <label>Website / Domain:
+      <input type="text" name="website" placeholder="z. B. example.de (optional)">
+    </label>
+  </div>
+
+  <h3>Ihre Kontaktdaten (als Anfragender)</h3>
+  <p class="muted">Einige Register geben vollständige Ergebnisse nur nach Angabe der Kontaktdaten des Anfragenden (Name, E‑Mail, Organisation). Diese Angaben sind optional, erhöhen aber die Trefferchance.</p>
+  <div class="form-row">
+    <label>Ihr vollständiger Name:
+      <input type="text" name="requester_name" placeholder="z. B. Max Mustermann">
+    </label>
+    <label>Ihre E‑Mail:
+      <input type="email" name="requester_email" placeholder="mail@beispiel.de">
+    </label>
+  </div>
+  <div class="form-row">
+    <label>Ihre Organisation / Firma:
+      <input type="text" name="requester_org" placeholder="z. B. Meine Firma GmbH">
+    </label>
+  </div>
+
+  <button type="submit">Prüfung starten</button>
 </form>
+<script>
+  // Client-side check: require at least VAT or Name
+  (function(){
+    const form = document.querySelector('form');
+    form.addEventListener('submit', function(e){
+      const vat = document.getElementById('vat_number').value.trim();
+      const name = document.getElementById('name').value.trim();
+      if(!vat && !name){
+        e.preventDefault();
+        alert('Bitte geben Sie mindestens die Umsatzsteuer‑ID oder den Firmennamen an.');
+      }
+    });
+  })();
+</script>
 {% endblock %}

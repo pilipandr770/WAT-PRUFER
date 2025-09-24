@@ -21,6 +21,10 @@ class Company(db.Model):
     country = db.Column(db.String, index=True)
     address = db.Column(db.String)
     website = db.Column(db.String)
+    # who initiated the lookup (optional)
+    requester_name = db.Column(db.String)
+    requester_email = db.Column(db.String)
+    requester_org = db.Column(db.String)
     raw_source = db.Column(db.JSON)
     current_status = db.Column(db.String, index=True)  # active/dissolved/insolvency/unknown
     confidence_score = db.Column(db.Integer, default=0)
@@ -44,9 +48,18 @@ class Check(db.Model):
     __tablename__ = "checks"
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey("companies.id"))
-    check_type = db.Column(db.String, index=True)  # vies/sanctions_eu/ofac/uk/insolvenz/whois/ssl/unternehmensregister
-    result = db.Column(db.JSON)
-    status = db.Column(db.String, index=True)      # ok/warning/critical/unknown
+    status = db.Column(db.String, index=True)      # ok/warning/critical/unknown/error
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    results = db.relationship("CheckResult", backref="check", cascade="all, delete-orphan")
+
+class CheckResult(db.Model):
+    __tablename__ = "check_results"
+    id = db.Column(db.Integer, primary_key=True)
+    check_id = db.Column(db.Integer, db.ForeignKey("checks.id"))
+    adapter_name = db.Column(db.String, index=True)
+    status = db.Column(db.String, index=True)
+    details = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class CheckEvent(db.Model):

@@ -16,15 +16,21 @@ def create_app(config_object: type[Config] = Config) -> Flask:
     migrate.init_app(app, db)
     login_manager.init_app(app)
 
+    # Import models to ensure they are registered
+    from . import models
+
     # User loader for Flask-Login
-    from .models import User
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        # Use session.get to avoid SQLAlchemy legacy warning
+        return db.session.get(models.User, int(user_id))
 
     # Blueprints
     app.register_blueprint(web_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
+
+    # NOTE: we rely on Alembic migrations to create DB schema in non-test environments.
+    # For tests, test fixtures create an in-memory DB and call create_all().
 
     # Celery instance на рівні app (створюється при потребі)
     app.celery_app = make_celery(app)

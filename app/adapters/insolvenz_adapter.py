@@ -2,28 +2,13 @@
 # Mock: проверка на insolvency.
 
 from .base import CheckResult
+from flask import current_app
+
 
 class InsolvenzAdapter:
     SOURCE = "insolvenz"
 
-    INSOLVENT_COMPANIES = ["Bankrupt Ltd"]
-
     def fetch(self, query: dict) -> CheckResult:
-        name = (query.get("name") or "").strip().lower()
-        if not name:
-            return {"status": "unknown", "data": {}, "source": self.SOURCE, "note": "name not provided"}
-        
-        if name in [c.lower() for c in self.INSOLVENT_COMPANIES]:
-            return {
-                "status": "critical",
-                "data": {"insolvency_records": [{"case": "Insolvenzverfahren"}]},
-                "source": self.SOURCE,
-                "note": "Insolvency found"
-            }
-        else:
-            return {
-                "status": "ok",
-                "data": {"insolvency_records": []},
-                "source": self.SOURCE,
-                "note": "No insolvency found"
-            }
+        if not (current_app and current_app.config.get('INSOLVENZ_ENABLED')):
+            return {"status": "error", "data": {}, "source": self.SOURCE, "note": "Insolvenz adapter not enabled or not configured"}
+        return {"status": "error", "data": {}, "source": self.SOURCE, "note": "Insolvenz adapter enabled but not implemented - configure real registry access"}

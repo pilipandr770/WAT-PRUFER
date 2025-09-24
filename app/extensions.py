@@ -14,7 +14,11 @@ def make_celery(app):
     celery = Celery(app.import_name,
                     broker=app.config["CELERY_BROKER_URL"],
                     backend=app.config["CELERY_RESULT_BACKEND"])
-    celery.conf.update(app.config)
+    # Respect eager mode (run tasks synchronously) for dev/testing
+    conf = {k: v for k, v in app.config.items() if isinstance(k, str)}
+    celery.conf.update(conf)
+    if app.config.get("CELERY_TASK_ALWAYS_EAGER"):
+        celery.conf.task_always_eager = True
     TaskBase = celery.Task
 
     class ContextTask(TaskBase):

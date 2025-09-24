@@ -8,50 +8,32 @@
   <li><strong>Land:</strong> {{ company.country }}</li>
   <li><strong>Adresse:</strong> {{ company.address }}</li>
   <li><strong>Website:</strong> {{ company.website }}</li>
+  <li><strong>Anfragender (Name):</strong> {{ company.requester_name or '—' }}</li>
+  <li><strong>Anfragender (E‑Mail):</strong> {{ company.requester_email or '—' }}</li>
+  <li><strong>Anfragender (Organisation):</strong> {{ company.requester_org or '—' }}</li>
   <li><strong>Status:</strong> 
-    <span class="status {{ 'ok' if company.current_status == 'ok' else 'warning' if company.current_status == 'warning' else 'critical' }}">
-      {{ 'OK' if company.current_status == 'ok' else 'Warnung' if company.current_status == 'warning' else 'Kritisch' if company.current_status == 'critical' else 'Unbekannt' }}
-    </span>
+    <span class="status-{{ check.status }}">{{ check.status }}</span>
   </li>
   <li><strong>Konfidenz-Score:</strong> {{ company.confidence_score }}/100</li>
   <li><strong>Letzte Überprüfung:</strong> {{ company.last_checked or '—' }}</li>
 </ul>
 
 <h3>Überprüfungsergebnisse</h3>
-{% for chk in checks %}
-<div class="check-result">
-  <h4>{{ chk.check_type | title }}</h4>
-  <p><strong>Status:</strong> 
-    <span class="status {{ 'ok' if chk.status == 'ok' else 'warning' if chk.status == 'warning' else 'critical' }}">
-      {{ 'OK' if chk.status == 'ok' else 'Warnung' if chk.status == 'warning' else 'Kritisch' if chk.status == 'critical' else 'Unbekannt' }}
-    </span>
-  </p>
-  {% if chk.result %}
-    {% if chk.check_type == 'vies' %}
-      <p><strong>USt-ID:</strong> {{ chk.result.vat_number or '—' }}</p>
-      <p><strong>Name:</strong> {{ chk.result.name or '—' }}</p>
-      <p><strong>Adresse:</strong> {{ chk.result.address or '—' }}</p>
-    {% elif chk.check_type == 'sanctions_eu' %}
-      <p><strong>Übereinstimmungs-Score:</strong> {{ chk.result.match_score or '—' }}</p>
-    {% elif chk.check_type == 'sanctions_ofac' %}
-      <p><strong>Übereinstimmungs-Score:</strong> {{ chk.result.match_score or '—' }}</p>
-    {% elif chk.check_type == 'sanctions_uk' %}
-      <p><strong>Übereinstimmungs-Score:</strong> {{ chk.result.match_score or '—' }}</p>
-    {% elif chk.check_type == 'unternehmensregister' %}
-      <p><strong>Register:</strong> {{ chk.result.registry or '—' }}</p>
-      <p><strong>Bekanntmachungen:</strong> {{ chk.result.notices | length if chk.result.notices else 0 }}</p>
-    {% elif chk.check_type == 'insolvenz' %}
-      <p><strong>Insolvenz-Aufzeichnungen:</strong> {{ chk.result.insolvency_records | length if chk.result.insolvency_records else 0 }}</p>
-    {% elif chk.check_type == 'whois' %}
-      <p><strong>Domain:</strong> {{ chk.result.domain or '—' }}</p>
-      <p><strong>Erstellt:</strong> {{ chk.result.created or '—' }}</p>
-      <p><strong>Registrar:</strong> {{ chk.result.registrar or '—' }}</p>
-    {% elif chk.check_type == 'ssl_labs' %}
-      <p><strong>Note:</strong> {{ chk.result.grade or '—' }}</p>
-      <p><strong>Hostname:</strong> {{ chk.result.hostname or '—' }}</p>
-    {% endif %}
+<ul>
+{% for result in check.results %}
+<li>
+  <strong>{{ result.adapter_name }}:</strong> <span class="status-{{ result.status }}">{{ result.status }}</span>
+  {% if result.details and result.details.used_query %}
+    <div class="used-query">
+      <em>Verwendete Felder:</em>
+      <ul>
+      {% for k, v in result.details.used_query.items() %}
+        <li><code>{{ k }}</code>: {{ v or '—' }}</li>
+      {% endfor %}
+      </ul>
+    </div>
   {% endif %}
-  <p><small>Datum: {{ chk.created_at }}</small></p>
-</div>
+</li>
 {% endfor %}
+</ul>
 {% endblock %}
