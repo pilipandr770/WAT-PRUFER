@@ -40,6 +40,8 @@ def web_lookup():
             requester_name=q.get("requester_name"),
             requester_email=q.get("requester_email"),
             requester_org=q.get("requester_org"),
+            requester_vat_number=q.get("requester_vat_number"),
+            requester_country_code=q.get("requester_country_code"),
             current_status="unknown",
             confidence_score=0,
             raw_source={},
@@ -58,6 +60,12 @@ def web_lookup():
         if q.get("requester_org") and not company.requester_org:
             company.requester_org = q.get("requester_org")
             changed = True
+        if q.get("requester_vat_number") and not company.requester_vat_number:
+            company.requester_vat_number = q.get("requester_vat_number")
+            changed = True
+        if q.get("requester_country_code") and not company.requester_country_code:
+            company.requester_country_code = q.get("requester_country_code")
+            changed = True
         if changed:
             db.session.add(company)
             db.session.commit()
@@ -65,7 +73,7 @@ def web_lookup():
     # enqueue full check task to run in background (or run synchronously if Celery
     # wrapper isn't registered yet, e.g. during tests)
     task_caller = getattr(run_full_check_task, 'delay', run_full_check_task)
-    task_caller(company.id)
+    task_caller(company.id, q.get("requester"))
     return redirect(url_for("web.company_detail", company_id=company.id))
 
 @web_bp.get("/companies")

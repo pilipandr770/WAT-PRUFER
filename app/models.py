@@ -25,6 +25,8 @@ class Company(db.Model):
     requester_name = db.Column(db.String)
     requester_email = db.Column(db.String)
     requester_org = db.Column(db.String)
+    requester_vat_number = db.Column(db.String)
+    requester_country_code = db.Column(db.String)
     raw_source = db.Column(db.JSON)
     current_status = db.Column(db.String, index=True)  # active/dissolved/insolvency/unknown
     confidence_score = db.Column(db.Integer, default=0)

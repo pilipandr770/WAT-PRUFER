@@ -154,6 +154,7 @@ class ViesAdapter:
         ).encode("utf-8")
         r = self.session.post(VIES_SOAP_ENDPOINT, data=xml, timeout=self.timeout)
         r.raise_for_status()
+        print(f"VIES approx XML response: {r.content.decode('utf-8', errors='ignore')}")
         return self._parse_approx_response(r.content)
 
     def fetch(self, query: dict) -> CheckResult:
@@ -181,6 +182,7 @@ class ViesAdapter:
             "name": basic.get("name"),
             "address": basic.get("address"),
         }
+        print(f"VIES basic result: {data}")
         status = "ok" if data["valid"] else ("warning" if data["valid"] is False else "unknown")
         note = "VAT is valid" if data["valid"] else ("VAT is NOT valid" if data["valid"] is False else "VIES unknown")
 
@@ -190,40 +192,22 @@ class ViesAdapter:
         req_vat = (req.get("vat_number") or "").strip().upper().replace(" ", "")
         trader_hint = (query.get("name") or "").strip()
 
-        if not data.get("name") and req_cc and req_vat:
+        import logging
+        print(f"VIES fetch: vat_full={vat_full}, cc={cc}, num={num}, req_cc={req_cc}, req_vat={req_vat}, trader_hint={trader_hint}")
+
+        if not data.get("name") and req_cc and req_vat and req_vat != num:
             try:
                 approx = self._call_approx(cc, num, req_cc, req_vat, trader_hint)
+                print(f"VIES approx result: {approx}")
                 if approx.get("name") and not data.get("name"):
                     data["name"] = approx["name"]
                 if approx.get("address") and not data.get("address"):
                     data["address"] = approx["address"]
                 if approx.get("requestDate"):
                     data["request_date"] = approx["requestDate"] or data["request_date"]
-            except Exception:
+            except Exception as e:
                 # тихо ігноруємо, якщо не вдалось
+                print(f"VIES approx error: {e}")
                 pass
 
         return {"status": status, "data": data, "source": self.SOURCE, "note": note}
-
-        try:
-            payload = self._build_envelope(cc, num).encode("utf-8")
-            r = self.session.post(VIES_SOAP_ENDPOINT, data=payload, timeout=self.timeout)
-            r.raise_for_status()
-            parsed = self._parse_response(r.content)
-            valid = parsed.get("valid")
-            status = "ok" if valid else ("warning" if valid is False else "unknown")
-            note = "VAT is valid" if valid else ("VAT is NOT valid" if valid is False else "VIES unknown")
-
-            data = {
-                "vat_number": vat_full,
-                "country_code": cc,
-                "request_date": parsed.get("requestDate"),
-                "valid": valid,
-                "name": parsed.get("name"),
-                "address": parsed.get("address"),
-            }
-            return {"status": status, "data": data, "source": self.SOURCE, "note": note}
-        except requests.RequestException as e:
-            return {"status": "unknown", "data": {"error": f"HTTP error: {e}", "used_query": query}, "source": self.SOURCE, "note": "VIES HTTP error"}
-        except Exception as e:
-            return {"status": "unknown", "data": {"error": f"Unexpected: {e}", "used_query": query}, "source": self.SOURCE, "note": "VIES unexpected error"}

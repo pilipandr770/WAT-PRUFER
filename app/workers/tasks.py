@@ -76,7 +76,16 @@ def _run_checks(company_id: int, requester: dict = None):
     if isinstance(vies_res.get("data"), dict):
         _enrich_company(company, vies_res["data"])
 
-    # 2) Оновити q після збагачення
+    # 2) Якщо після VIES немає name, спробувати OpenCorporates для збагачення
+    if not company.name:
+        opencorp_res = _maybe_run(OpenCorporatesAdapter(), q)
+        results.append(opencorp_res)
+        if opencorp_res.get("status") == "ok" and opencorp_res.get("data", {}).get("name"):
+            company.name = opencorp_res["data"]["name"]
+            db.session.add(company)
+            db.session.commit()
+
+    # 3) Оновити q після збагачення
     q = _pre_check_query(company, requester or {})
 
     # 3) Інші адаптери лише якщо є мінімальні дані
@@ -93,8 +102,8 @@ def _run_checks(company_id: int, requester: dict = None):
         notify_status_change(company.id, prev, company.current_status)
 
 # Expose a module-level function that can be called directly by the smoke runner
-def run_full_check_task(company_id: int):
-    _run_checks(company_id)
+def run_full_check_task(company_id: int, requester: dict = None):
+    _run_checks(company_id, requester)
     return {"company_id": company_id, "done": True}
 
 
@@ -116,8 +125,8 @@ def _bootstrap_tasks(app):
         return
 
     @celery.task(name="run_full_check_task")
-    def _celery_run_full_check(company_id: int):
-        return run_full_check_task(company_id)
+    def _celery_run_full_check(company_id: int, requester: dict = None):
+        return run_full_check_task(company_id, requester)
 
     @celery.task(name="daily_monitoring_task")
     def _celery_daily_monitoring():

@@ -30,7 +30,7 @@
   </div>
 
   <h3>Ihre Kontaktdaten (als Anfragender)</h3>
-  <p class="muted">Einige Register geben vollständige Ergebnisse nur nach Angabe der Kontaktdaten des Anfragenden (Name, E‑Mail, Organisation). Diese Angaben sind optional, erhöhen aber die Trefferchance.</p>
+  <p class="muted">Einige Register geben vollständige Ergebnisse nur nach Angabe der Kontaktdaten des Anfragenden (Name, E‑Mail, Organisation, USt‑ID). Diese Angaben sind optional, erhöhen aber die Trefferchance.</p>
   <div class="form-row">
     <label>Ihr vollständiger Name:
       <input type="text" name="requester_name" placeholder="z. B. Max Mustermann">
@@ -42,6 +42,15 @@
   <div class="form-row">
     <label>Ihre Organisation / Firma:
       <input type="text" name="requester_org" placeholder="z. B. Meine Firma GmbH">
+    </label>
+    <label>Ihre USt‑ID (für VIES):
+      <input type="text" name="requester_vat_number" placeholder="z. B. DE123456789">
+      <small class="muted">Erforderlich für detaillierte VIES-Abfragen (checkVatApprox).</small>
+    </label>
+  </div>
+  <div class="form-row">
+    <label>Ihr Land (ISO2):
+      <input type="text" name="requester_country_code" placeholder="z. B. DE">
     </label>
   </div>
 
