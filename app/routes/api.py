@@ -8,7 +8,7 @@ from ..services.normalizer import normalize_company_query
 from ..workers.tasks import _run_checks
 from datetime import datetime
 
-api_bp = Blueprint("api", __name__)
+api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 @api_bp.post("/companies/lookup")
 def companies_lookup():
@@ -16,37 +16,26 @@ def companies_lookup():
     Приймає будь-які відомі поля (vat_number/name/website/address),
     створює/оновлює компанію і запускає фонову перевірку.
     """
-    data = request.get_json(force=True, silent=True) or {}
-    q = normalize_company_query(data)
+    payload = request.get_json(force=True, silent=True) or {}
 
-    company = Company.query.filter(
-        (Company.vat_number == q.get("vat_number")) | (Company.name == q.get("name"))
-    ).first()
+    vat = (payload.get("vat_number") or "").strip()
+    name = (payload.get("name") or "").strip()
+    country = (payload.get("country") or "").strip()
+    address = (payload.get("address") or "").strip()
+    website = (payload.get("website") or "").strip()
 
-    if not company:
-        company = Company(
-            vat_number=q.get("vat_number"),
-            name=q.get("name"),
-            country=q.get("country"),
-            address=q.get("address"),
-            website=q.get("website"),
-            current_status="unknown",
-            confidence_score=0,
-            raw_source={},
-        )
-        db.session.add(company)
-        db.session.commit()
+    # requester з тіла або з .env
+    requester = payload.get("requester") or {
+        "country_code": current_app.config.get("REQUESTER_COUNTRY_CODE", ""),
+        "vat_number":  current_app.config.get("REQUESTER_VAT_NUMBER", ""),
+    }
 
-    # requester з тіла запиту або з конфіга
-    req = data.get("requester") or {}
-    if not req:
-        req = {
-            "country_code": current_app.config.get("REQUESTER_COUNTRY_CODE", ""),
-            "vat_number": current_app.config.get("REQUESTER_VAT_NUMBER", ""),
-        }
+    company = Company(vat_number=vat, name=name, country=country, address=address, website=website)
+    db.session.add(company); db.session.commit()
 
-    # запуск синхронної перевірки для демо
-    _run_checks(company.id, requester=req)
+    _run_checks(company.id, requester=requester)
+
+    return jsonify({"id": company.id}), 200
 
     return jsonify({"company_id": company.id, "status": "completed"})
 
