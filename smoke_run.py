@@ -19,8 +19,16 @@ with app.app_context():
 
     client = app.test_client()
     vat = 'DE811220642'
-    resp = client.post('/lookup', data={'vat_number': vat, 'country': 'DE'}, follow_redirects=True)
-    print('POST /lookup status:', resp.status_code)
+    data = {
+        'vat_number': vat,
+        'country': 'DE',
+        'requester': {
+            'country_code': 'DE',
+            'vat_number': 'DE456902445'  # real requester VAT
+        }
+    }
+    resp = client.post('/api/companies/lookup', json=data, follow_redirects=True)
+    print('POST /api/companies/lookup status:', resp.status_code)
 
     company = Company.query.filter_by(vat_number=vat).first()
     if not company:

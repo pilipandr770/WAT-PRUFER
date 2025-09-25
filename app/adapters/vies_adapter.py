@@ -79,10 +79,10 @@ class ViesAdapter:
     def _parse_check_response(self, xml_bytes: bytes) -> dict:
         root = etree.fromstring(xml_bytes)
         body = next((el for el in root.iter() if el.tag.endswith("Body")), None)
-        if not body:
+        if body is None:
             return {}
         resp = next((el for el in body.iter() if el.tag.endswith("checkVatResponse")), None)
-        if not resp:
+        if resp is None:
             return {}
 
         def get(tag_local):
@@ -111,10 +111,10 @@ class ViesAdapter:
     def _parse_approx_response(self, xml_bytes: bytes) -> dict:
         root = etree.fromstring(xml_bytes)
         body = next((el for el in root.iter() if el.tag.endswith("Body")), None)
-        if not body:
+        if body is None:
             return {}
         resp = next((el for el in body.iter() if el.tag.endswith("checkVatApproxResponse")), None)
-        if not resp:
+        if resp is None:
             return {}
 
         def get(tag_local):
