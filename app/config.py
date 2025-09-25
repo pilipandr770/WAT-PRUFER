@@ -52,6 +52,10 @@ class Config:
     SANCTIONS_OFAC_CSV_URL = os.getenv("SANCTIONS_OFAC_CSV_URL", "")
     SANCTIONS_UK_CSV_URL = os.getenv("SANCTIONS_UK_CSV_URL", "")
 
+    # Requester defaults for VIES checkVatApprox
+    REQUESTER_COUNTRY_CODE = os.getenv("REQUESTER_COUNTRY_CODE", "")
+    REQUESTER_VAT_NUMBER = os.getenv("REQUESTER_VAT_NUMBER", "")
+
     # HTTP / retries
     EXTERNAL_REQUEST_TIMEOUT = int(os.getenv("EXTERNAL_REQUEST_TIMEOUT", "30"))
     EXTERNAL_REQUEST_RETRIES = int(os.getenv("EXTERNAL_REQUEST_RETRIES", "2"))

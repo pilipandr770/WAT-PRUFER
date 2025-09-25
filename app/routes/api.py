@@ -37,10 +37,18 @@ def companies_lookup():
         db.session.add(company)
         db.session.commit()
 
-    # запуск фонової перевірки (Celery)
-    _run_checks(company.id)
+    # requester з тіла запиту або з конфіга
+    req = data.get("requester") or {}
+    if not req:
+        req = {
+            "country_code": current_app.config.get("REQUESTER_COUNTRY_CODE", ""),
+            "vat_number": current_app.config.get("REQUESTER_VAT_NUMBER", ""),
+        }
 
-    return jsonify({"company_id": company.id, "status": "queued"})
+    # запуск синхронної перевірки для демо
+    _run_checks(company.id, requester=req)
+
+    return jsonify({"company_id": company.id, "status": "completed"})
 
 @api_bp.get("/companies")
 def companies_list():

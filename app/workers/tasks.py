@@ -2,6 +2,7 @@ from ..extensions import db
 from ..models import Company, MonitoringSubscription
 from ..services.aggregator import apply_results
 from ..services.notifier import notify_status_change
+from flask import current_app
 
 from ..adapters.vies_adapter import ViesAdapter
 from ..adapters.sanctions_eu_adapter import EUSanctionsAdapter
@@ -13,7 +14,7 @@ from ..adapters.whois_denic_adapter import WhoisDenicAdapter
 from ..adapters.ssl_labs_adapter import SSLLabsAdapter
 from ..adapters.opencorporates_adapter import OpenCorporatesAdapter
 
-def _pre_check_query(company: Company) -> dict:
+def _pre_check_query(company: Company, requester: dict = None) -> dict:
     name = (company.name or "").strip()
     if name == "---":
         name = ""
@@ -23,6 +24,10 @@ def _pre_check_query(company: Company) -> dict:
         "country": (company.country or "").strip(),
         "address": (company.address or "").strip(),
         "website": (company.website or "").strip(),
+        "requester": requester or {
+            "country_code": current_app.config.get("REQUESTER_COUNTRY_CODE", ""),
+            "vat_number": current_app.config.get("REQUESTER_VAT_NUMBER", ""),
+        },
     }
 
 def _enrich_company(company: Company, vies_data: dict):
@@ -61,35 +66,29 @@ def _maybe_run(adapter, q: dict) -> dict:
     except Exception as e:
         return {"status": "unknown", "data": {"error": str(e), "used_query": q}, "source": src}
 
-def _run_checks(company_id: int):
+def _run_checks(company_id: int, requester: dict = None):
     company = Company.query.get(company_id)
     if not company:
         return
 
-    q = _pre_check_query(company)
+    q = _pre_check_query(company, requester)
     results = []
 
-    # 1) Спершу VIES
+    # 1) VIES (із можливим checkVatApprox)
     vies_res = _maybe_run(ViesAdapter(), q)
     results.append(vies_res)
 
-    # 2) Збагачуємо компанію з VIES (якщо щось дали)
     if isinstance(vies_res.get("data"), dict):
         _enrich_company(company, vies_res["data"])
 
-    # Оновити q після збагачення (можливо з’явиться country/address/name)
-    q = _pre_check_query(company)
+    # 2) Оновлюємо q — раптом з’явилась name/country
+    q = _pre_check_query(company, requester)
 
-    # 3) Інші адаптери — лише якщо є мінімально потрібні поля
+    # 3) Інші адаптери
     for adapter in [
-        EUSanctionsAdapter(),
-        OFACAdapter(),
-        UKSanctionsAdapter(),
-        UnternehmensregisterAdapter(),
-        InsolvenzAdapter(),
-        OpenCorporatesAdapter(),
-        WhoisDenicAdapter(),
-        SSLLabsAdapter(),
+        EUSanctionsAdapter(), OFACAdapter(), UKSanctionsAdapter(),
+        UnternehmensregisterAdapter(), InsolvenzAdapter(), OpenCorporatesAdapter(),
+        WhoisDenicAdapter(), SSLLabsAdapter(),
     ]:
         results.append(_maybe_run(adapter, q))
 
