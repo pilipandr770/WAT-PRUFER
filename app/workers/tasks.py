@@ -1,3 +1,140 @@
+"""Celery tasks and adapter orchestration for company checks.
+
+Provides a pipeline that runs VIES first (to enrich company data) and then the
+other adapters. The application expects this module to expose a
+`_bootstrap_tasks(app)` function that will register Celery tasks when the app
+is created; for local use the module also exposes `run_full_check_task`.
+"""
+
+from flask import current_app
+from ..extensions import db
+from ..models import Company, MonitoringSubscription
+from ..services.aggregator import apply_results
+from ..services.notifier import notify_status_change
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Adapters — we intentionally use a single robust VIES adapter implementation
+from ..adapters.vies_adapter import ViesAdapter
+from ..adapters.sanctions_eu_adapter import EUSanctionsAdapter
+from ..adapters.sanctions_ofac_adapter import OFACAdapter
+from ..adapters.sanctions_uk_adapter import UKSanctionsAdapter
+from ..adapters.unternehmensregister_adapter import UnternehmensregisterAdapter
+from ..adapters.insolvenz_adapter import InsolvenzAdapter
+from ..adapters.whois_denic_adapter import WhoisDenicAdapter
+from ..adapters.ssl_labs_adapter import SSLLabsAdapter
+from ..adapters.opencorporates_adapter import OpenCorporatesAdapter
+
+
+def _adapters():
+    return [
+        ViesAdapter(),
+        EUSanctionsAdapter(),
+        OFACAdapter(),
+        UKSanctionsAdapter(),
+        UnternehmensregisterAdapter(),
+        InsolvenzAdapter(),
+        OpenCorporatesAdapter(),
+        WhoisDenicAdapter(),
+        SSLLabsAdapter(),
+    ]
+
+
+def _pre_check_query(company: Company) -> dict:
+    name = (company.name or "").strip()
+    if name == "---":
+        name = ""
+    return {
+        "vat_number": (company.vat_number or "").strip(),
+        "name": name,
+        "country": (company.country or "").strip(),
+        "address": (company.address or "").strip(),
+        "website": (company.website or "").strip(),
+    }
+
+
+def _enrich_company_from_vies(company: Company, vies_data: dict):
+    v_name = vies_data.get("name")
+    v_addr = vies_data.get("address")
+    v_country = vies_data.get("country_code")
+
+    changed = False
+    if v_country and not (company.country and company.country.strip()):
+        company.country = v_country
+        changed = True
+    if v_addr and not (company.address and company.address.strip()):
+        company.address = v_addr
+        changed = True
+    if v_name and not (company.name and company.name.strip() and company.name.strip() != "---"):
+        company.name = v_name
+        changed = True
+
+    if changed:
+        db.session.add(company)
+        db.session.commit()
+
+
+def _run_checks(company_id: int):
+    c = db.session.get(Company, company_id)
+    if not c:
+        return
+
+    q = _pre_check_query(c)
+    results = []
+    vies_result = None
+
+    for adapter in _adapters():
+        try:
+            res = adapter.fetch(q)
+        except Exception as e:
+            logger.exception("Adapter %s failed", getattr(adapter, "SOURCE", type(adapter)))
+            res = {"status": "unknown", "data": {"error": str(e), "used_query": q}, "source": getattr(adapter, "SOURCE", "unknown")}
+        results.append(res)
+
+        if getattr(adapter, "SOURCE", "") == "vies" and isinstance(res.get("data"), dict):
+            vies_result = res
+
+    if vies_result and isinstance(vies_result.get("data"), dict):
+        _enrich_company_from_vies(c, vies_result["data"])
+
+    prev = c.current_status or "unknown"
+    apply_results(c, results)
+    if prev != c.current_status:
+        notify_status_change(c.id, prev, c.current_status)
+
+
+# Expose a module-level function that can be called directly by the smoke runner
+def run_full_check_task(company_id: int):
+    _run_checks(company_id)
+    return {"company_id": company_id, "done": True}
+
+
+def daily_monitoring_task():
+    subs = MonitoringSubscription.query.filter_by(enabled=True).all()
+    for s in subs:
+        run_full_check_task(s.company_id)
+    return {"scheduled": len(subs)}
+
+
+def _bootstrap_tasks(app):
+    """Register Celery tasks on the Flask app's Celery instance.
+
+    app: Flask application created by create_app()
+    """
+    try:
+        celery = app.celery_app
+    except Exception:
+        return
+
+    @celery.task(name="run_full_check_task")
+    def _celery_run_full_check(company_id: int):
+        return run_full_check_task(company_id)
+
+    @celery.task(name="daily_monitoring_task")
+    def _celery_daily_monitoring():
+        return daily_monitoring_task()
+
 # app/workers/tasks.py
 # Celery таски: основна повна перевірка та щоденний моніторинг
 
@@ -15,6 +152,9 @@ try:
     VIES_REAL_AVAILABLE = True
 except Exception:
     VIES_REAL_AVAILABLE = False
+# TEMPORARY OVERRIDE: force-disable the optional real adapter until network/proxy issues are resolved
+# This ensures we only use the robust in-repo ViesAdapter which ignores env proxies.
+VIES_REAL_AVAILABLE = False
 try:
     from ..adapters.opencorporates_adapter import OpenCorporatesAdapter
     OPENCORP_AVAILABLE = True
@@ -28,200 +168,128 @@ from ..adapters.ssl_labs_adapter import SSLLabsAdapter
 from ..adapters.unternehmensregister_adapter import UnternehmensregisterAdapter
 from ..adapters.insolvenz_adapter import InsolvenzAdapter
 
+# app/workers/tasks.py
+# Celery таски: основна повна перевірка та щоденний моніторинг
+
+from flask import current_app
+from ..extensions import db
+from ..models import Company, MonitoringSubscription
+from ..services.aggregator import apply_results
+from ..services.notifier import notify_status_change
+
+# Адаптери — використовуємо тільки один VIES адаптер і решту перевірок
+from ..adapters.vies_adapter import ViesAdapter
+from ..adapters.sanctions_eu_adapter import EUSanctionsAdapter
+from ..adapters.sanctions_ofac_adapter import OFACAdapter
+from ..adapters.sanctions_uk_adapter import UKSanctionsAdapter
+from ..adapters.unternehmensregister_adapter import UnternehmensregisterAdapter
+from ..adapters.insolvenz_adapter import InsolvenzAdapter
+from ..adapters.whois_denic_adapter import WhoisDenicAdapter
+from ..adapters.ssl_labs_adapter import SSLLabsAdapter
+from ..adapters.opencorporates_adapter import OpenCorporatesAdapter
+
+
 def _adapters():
-    adapters = []
-    # prefer real VIES if enabled in config
-    try:
-        from flask import current_app
-        if current_app and current_app.config.get("VIES_ENABLED") and VIES_REAL_AVAILABLE:
-            adapters.append(ViesRealAdapter())
-        else:
-            adapters.append(ViesAdapter())
-    except Exception:
-        adapters.append(ViesAdapter())
-
-    # add Unternehmensregister first
-    adapters.append(UnternehmensregisterAdapter())
-
-    # optionally add OpenCorporates if enabled in config
-    try:
-        from flask import current_app
-        if current_app and current_app.config.get("OPENCORP_ENABLED") and OPENCORP_AVAILABLE:
-            adapters.append(OpenCorporatesAdapter())
-    except Exception:
-        pass
-
-    adapters.extend([
+    # Порядок важливий: спочатку VIES (щоб підтягнути країну/адресу),
+    # далі санкції (потребують name), потім реєстри й техперевірки.
+    return [
+        ViesAdapter(),
         EUSanctionsAdapter(),
         OFACAdapter(),
         UKSanctionsAdapter(),
+        UnternehmensregisterAdapter(),
         InsolvenzAdapter(),
+        OpenCorporatesAdapter(),
         WhoisDenicAdapter(),
         SSLLabsAdapter(),
-    ])
-    return adapters
+    ]
 
-# Celery об'єкт беремо з app.celery_app
-celery = None
 
-def _ensure_celery():
-    global celery
-    if celery is None:
-        celery = current_app.celery_app
-    return celery
-
-def _run_checks(company_id: int):
-    # Use Session.get to avoid SQLAlchemy 2.0 legacy warning
-    company = db.session.get(Company, company_id)
-    if not company:
-        return
-
-    q = {
-        "vat_number": company.vat_number,
-        "name": company.name,
-        "country": company.country,
-        "address": company.address,
-        "website": company.website,
-        "requester_name": company.requester_name,
-        "requester_email": company.requester_email,
-        "requester_org": company.requester_org,
-        "requester": {
-            "name": company.requester_name,
-            "email": company.requester_email,
-            "org": company.requester_org,
-        }
+def _pre_check_query(company: Company) -> dict:
+    # Нормалізуємо вхід: якщо назва порожня або '---', не використовуємо її.
+    name = (company.name or "").strip()
+    if name == "---":
+        name = ""
+    return {
+        "vat_number": (company.vat_number or "").strip(),
+        "name": name,
+        "country": (company.country or "").strip(),
+        "address": (company.address or "").strip(),
+        "website": (company.website or "").strip(),
     }
 
-    results = {}
 
-    # Run VIES first to enrich company data for downstream adapters
-    vies = ViesAdapter()
-    try:
-        vies_q = q.copy()
-        vies_res = vies.fetch(vies_q)
-    except Exception as e:
-        vies_res = {"status": "unknown", "data": {"error": str(e)}, "source": getattr(vies, "SOURCE", "vies")}
-    # record which query was used for this adapter
-    try:
-        vies_res["used_query"] = vies_q
-    except Exception:
-        vies_res["used_query"] = q.copy()
-    results[vies.SOURCE] = vies_res
+def _enrich_company_from_vies(company: Company, vies_data: dict):
+    # Не затираємо name, якщо VIES повернув None/'---'.
+    v_name = vies_data.get("name")
+    v_addr = vies_data.get("address")
+    v_country = vies_data.get("country_code")
 
-    # If VIES returned useful company info, update the Company record so other adapters get the data
-    try:
-        data = vies_res.get("data") or {}
-        changed = False
-        # Only update if we have non-empty values
-        if data.get("name") and not company.name:
-            company.name = data.get("name")
-            changed = True
-        if data.get("address") and not company.address:
-            company.address = data.get("address")
-            changed = True
-        if data.get("country") and not company.country:
-            company.country = data.get("country")
-            changed = True
-        if data.get("website") and not company.website:
-            company.website = data.get("website")
-            changed = True
-        if changed:
-            db.session.add(company)
-            db.session.commit()
-            # rebuild q from updated company
-            q = {
-                "vat_number": company.vat_number,
-                "name": company.name,
-                "country": company.country,
-                "address": company.address,
-                "website": company.website
-            }
-    except Exception:
-        # If enrichment fails, continue with best-effort
-        pass
+    changed = False
+    if v_country and not (company.country and company.country.strip()):
+        company.country = v_country; changed = True
+    if v_addr and not (company.address and company.address.strip()):
+        company.address = v_addr; changed = True
+    if v_name and not (company.name and company.name.strip() and company.name.strip() != "---"):
+        company.name = v_name; changed = True
 
-    # Run the remaining adapters (skip VIES since already executed)
-    # Only pass requester fields to adapters that require them (reduce unnecessary sharing)
-    REQUESTER_ALLOWED = {"unternehmensregister", "vies", "vies_real"}
+    if changed:
+        db.session.add(company)
+        db.session.commit()
+
+
+def _run_checks(company_id: int):
+    c = db.session.get(Company, company_id)
+    if not c:
+        return
+
+    q = _pre_check_query(c)
+    results = []
+    vies_result = None
+
     for adapter in _adapters():
-        if adapter.SOURCE == vies.SOURCE:
-            continue
         try:
-            # by default strip requester fields
-            if adapter.SOURCE in REQUESTER_ALLOWED:
-                adapter_q = q.copy()
-            else:
-                adapter_q = {k: v for k, v in q.items() if not k.startswith("requester")}
-            res = adapter.fetch(adapter_q)
+            res = adapter.fetch(q)
         except Exception as e:
-            res = {"status": "unknown", "data": {"error": str(e)}, "source": getattr(adapter, "SOURCE", "unknown")}
+            # захист від падіння всього пайплайна
+            res = {"status": "unknown", "data": {"error": str(e), "used_query": q}, "source": getattr(adapter, "SOURCE", "unknown")}
+        results.append(res)
 
-        # record which fields were used for this adapter
-        try:
-            res["used_query"] = adapter_q
-        except Exception:
-            res["used_query"] = q.copy()
+        # якщо це VIES і є дані — збагачуємо компанію для наступних адаптерів
+        if getattr(adapter, "SOURCE", "") == "vies" and isinstance(res.get("data"), dict):
+            vies_result = res
 
-        # store adapter result
-        results[adapter.SOURCE] = res
+    # Після першого кола — за бажанням можемо оновити company і прогнати частину адаптерів ще раз,
+    # але для MVP достатньо одноразово:
+    if vies_result and isinstance(vies_result.get("data"), dict):
+        _enrich_company_from_vies(c, vies_result["data"])
 
-        # If adapter returned company-like data, use it to enrich Company for subsequent adapters
-        try:
-            data = res.get("data") or {}
-            changed = False
-            if data.get("name") and not company.name:
-                company.name = data.get("name")
-                changed = True
-            if data.get("address") and not company.address:
-                company.address = data.get("address")
-                changed = True
-            if data.get("country") and not company.country:
-                company.country = data.get("country")
-                changed = True
-            if data.get("website") and not company.website:
-                company.website = data.get("website")
-                changed = True
-            if changed:
-                db.session.add(company)
-                db.session.commit()
-                # update query for next adapters
-                q = {
-                    "vat_number": company.vat_number,
-                    "name": company.name,
-                    "country": company.country,
-                    "address": company.address,
-                    "website": company.website
-                }
-        except Exception:
-            pass
+    prev = c.current_status or "unknown"
+    apply_results(c, results)
+    if prev != c.current_status:
+        notify_status_change(c.id, prev, c.current_status)
 
-    return results
 
-# === Celery tasks ===
-def run_full_check_task(company_id: int):
-    # fetch results from adapters
-    results = _run_checks(company_id)
-    if results:
-        check = persist_check_results(company_id, results)
-        return {"company_id": company_id, "check_id": check.id, "done": True}
-    return {"company_id": company_id, "done": False}
-
-def daily_monitoring_task():
-    # Проходимо по підписках і перевіряємо компанії
-    subs = MonitoringSubscription.query.filter_by(enabled=True).all()
-    for s in subs:
-        run_full_check_task.delay(s.company_id)
-    return {"scheduled": len(subs)}
-
+# Celery інтеграція
 def _register_tasks(celery_app):
-    global run_full_check_task, daily_monitoring_task
-    run_full_check_task = celery_app.task(run_full_check_task)
-    daily_monitoring_task = celery_app.task(daily_monitoring_task)
+    @celery_app.task(name="run_full_check_task")
+    def run_full_check_task(company_id: int):
+        _run_checks(company_id)
+        return {"company_id": company_id, "done": True}
 
-# Під час імпорту модуля — реєструємо таски у контейнері Celery
-# (викликається з __init__.py після створення app)
-def _bootstrap_tasks(app):
-    global celery
-    if celery is None:
-        celery = app.celery_app
+    @celery_app.task(name="daily_monitoring_task")
+    def daily_monitoring_task():
+        subs = MonitoringSubscription.query.filter_by(enabled=True).all()
+        for s in subs:
+            run_full_check_task.delay(s.company_id)
+        return {"scheduled": len(subs)}
+
+
+# bootstrap
+from flask import current_app
+try:
+    celery = current_app.celery_app  # уже створено у фабриці додатку
     _register_tasks(celery)
+except Exception:
+    # при імпорті поза контекстом приложення — ок
+    pass
