@@ -1,50 +1,38 @@
+# FILE: app/adapters/vies_adapter.py
+# Прямий SOAP-виклик VIES без zeep/WSDL. Жодних системних проксі. Ручний парсинг XML + нормалізація дати.
 from .base import CheckResult
-from zeep import Client, Settings
-from zeep.transports import Transport
-from zeep.exceptions import Fault, TransportError
-from requests import Session
+import os, re
+import requests
 from lxml import etree
 from dateutil import parser as dtparser
-import re
-import os
-import logging
 
-logger = logging.getLogger(__name__)
+VIES_SOAP_ENDPOINT = "https://ec.europa.eu/taxation_customs/vies/services/checkVatService"
+SOAP_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 
-VIES_WSDL = "https://ec.europa.eu/taxation_customs/vies/services/checkVatService?wsdl"
-SOAP_NS = "{http://schemas.xmlsoap.org/soap/envelope/}"
-
+SOAP_ENVELOPE_TMPL = """<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="{soap_ns}" xmlns:urn="urn:ec.europa.eu:taxud:vies:services:checkVat:types">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <urn:checkVat>
+      <urn:countryCode>{cc}</urn:countryCode>
+      <urn:vatNumber>{num}</urn:vatNumber>
+    </urn:checkVat>
+  </soapenv:Body>
+</soapenv:Envelope>
+"""
 
 class ViesAdapter:
     SOURCE = "vies"
 
-    def __init__(self, wsdl: str = None, operation_timeout: int = 30):
-        wsdl = wsdl or VIES_WSDL
-        # Build a requests session that will NOT pick up system env proxies
-        session = Session()
-        session.trust_env = False
-        session.proxies = {"http": None, "https": None}
-
-        transport = Transport(session=session, timeout=20, operation_timeout=operation_timeout)
-        settings = Settings(strict=False, xml_huge_tree=True)
-
-        try:
-            self.client = Client(wsdl=wsdl, transport=transport, settings=settings)
-        except Exception as e:
-            logger.warning("Failed to initialize VIES client at init: %s", e)
-            # Defer initialization until fetch()
-            self.client = None
-
-    def _ensure_client(self, wsdl: str = None):
-        if self.client is not None:
-            return
-        wsdl = wsdl or VIES_WSDL
-        session = Session()
-        session.trust_env = False
-        session.proxies = {"http": None, "https": None}
-        transport = Transport(session=session, timeout=20)
-        settings = Settings(strict=False, xml_huge_tree=True)
-        self.client = Client(wsdl=wsdl, transport=transport, settings=settings)
+    def __init__(self, timeout: int = 20):
+        self.timeout = timeout
+        for k in ("HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","http_proxy","https_proxy","all_proxy"):
+            os.environ.pop(k, None)
+        os.environ["NO_PROXY"] = "*"  # на всяк
+        self.session = requests.Session()
+        self.session.trust_env = False
+        self.session.proxies = {"http": None, "https": None}
+        self.session.headers.update({"Content-Type": "text/xml; charset=utf-8"})
 
     def _split_vat(self, vat: str):
         vat = (vat or "").strip().upper().replace(" ", "")
@@ -53,27 +41,39 @@ class ViesAdapter:
             return None, None
         return m.group(1), m.group(2)
 
-    def _parse_raw(self, raw_bytes: bytes) -> dict:
-        root = etree.fromstring(raw_bytes)
-        body = root.find(f"{SOAP_NS}Body")
+    def _build_envelope(self, cc: str, num: str) -> str:
+        return SOAP_ENVELOPE_TMPL.format(soap_ns=SOAP_ENV_NS, cc=cc, num=num)
+
+    def _normalize_date(self, raw: str) -> str:
+        if not raw:
+            return None
+        # 1) спробуємо парсер
+        try:
+            return dtparser.parse(raw).date().isoformat()
+        except Exception:
+            pass
+        # 2) жорсткий fallback: беремо перші 10 символів YYYY-MM-DD
+        if re.match(r"^\d{4}-\d{2}-\d{2}", raw):
+            return raw[:10]
+        return raw
+
+    def _parse_response(self, xml_bytes: bytes) -> dict:
+        root = etree.fromstring(xml_bytes)
+        body = next((el for el in root.iter() if el.tag.endswith("Body")), None)
         if body is None:
             return {}
-        resp = None
-        for node in body.iter():
-            if node.tag.endswith("checkVatResponse"):
-                resp = node
-                break
+        resp = next((el for el in body.iter() if el.tag.endswith("checkVatResponse")), None)
         if resp is None:
             return {}
 
-        def get(tag_local: str):
+        def get_text(tag_local: str):
             el = next((e for e in resp if e.tag.endswith(tag_local)), None)
             return (el.text or "").strip() if el is not None and el.text else ""
 
-        valid_txt = get("valid")
-        name = get("name")
-        address = get("address")
-        date_txt = get("requestDate")
+        valid_txt = get_text("valid")
+        name = get_text("name")
+        address = get_text("address")
+        date_txt = get_text("requestDate")
 
         valid = None
         if valid_txt.lower() in ("true", "1"):
@@ -81,45 +81,27 @@ class ViesAdapter:
         elif valid_txt.lower() in ("false", "0"):
             valid = False
 
-        req_date = None
-        if date_txt:
-            try:
-                req_date = dtparser.parse(date_txt).date().isoformat()
-            except Exception:
-                req_date = date_txt
+        request_date = self._normalize_date(date_txt)
 
-        if name == "---":
-            name = None
-        if address == "---":
-            address = None
+        if name == "---": name = None
+        if address == "---": address = None
 
-        return {"valid": valid, "name": name, "address": address, "requestDate": req_date}
+        return {"valid": valid, "name": name, "address": address, "requestDate": request_date}
 
     def fetch(self, query: dict) -> CheckResult:
-        # Remove any proxy env vars that could affect requests
-        for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy", "NO_PROXY", "no_proxy"):
-            os.environ.pop(k, None)
-
         vat_full = (query.get("vat_number") or "").strip()
         if not vat_full:
             return {"status": "unknown", "data": {}, "source": self.SOURCE, "note": "VAT not provided"}
 
-        cc, number = self._split_vat(vat_full)
-        if not cc or not number:
+        cc, num = self._split_vat(vat_full)
+        if not cc or not num:
             return {"status": "warning", "data": {"vat_number": vat_full}, "source": self.SOURCE, "note": "Invalid VAT format"}
 
         try:
-            if self.client is None:
-                self._ensure_client()
-        except Exception as e:
-            logger.error("VIES client init failed: %s", e)
-            return {"status": "unknown", "data": {"error": str(e), "used_query": query}, "source": self.SOURCE, "note": "VIES client init failed"}
-
-        try:
-            raw = self.client.service.checkVat(countryCode=cc, vatNumber=number, _raw_response=True)
-            raw_bytes = raw.content if hasattr(raw, "content") else bytes(raw)
-            parsed = self._parse_raw(raw_bytes)
-
+            payload = self._build_envelope(cc, num).encode("utf-8")
+            r = self.session.post(VIES_SOAP_ENDPOINT, data=payload, timeout=self.timeout)
+            r.raise_for_status()
+            parsed = self._parse_response(r.content)
             valid = parsed.get("valid")
             status = "ok" if valid else ("warning" if valid is False else "unknown")
             note = "VAT is valid" if valid else ("VAT is NOT valid" if valid is False else "VIES unknown")
@@ -133,13 +115,30 @@ class ViesAdapter:
                 "address": parsed.get("address"),
             }
             return {"status": status, "data": data, "source": self.SOURCE, "note": note}
-
-        except Fault as e:
-            logger.warning("VIES SOAP Fault for %s: %s", vat_full, e)
-            return {"status": "unknown", "data": {"error": f"SOAP Fault: {e}", "used_query": query}, "source": self.SOURCE, "note": "VIES fault"}
-        except TransportError as e:
-            logger.warning("VIES transport error for %s: %s", vat_full, e)
-            return {"status": "unknown", "data": {"error": f"Transport Error: {e}", "used_query": query}, "source": self.SOURCE, "note": "VIES transport error"}
+        except requests.RequestException as e:
+            return {"status": "unknown", "data": {"error": f"HTTP error: {e}", "used_query": query}, "source": self.SOURCE, "note": "VIES HTTP error"}
         except Exception as e:
-            logger.exception("VIES unexpected error for %s", vat_full)
+            return {"status": "unknown", "data": {"error": f"Unexpected: {e}", "used_query": query}, "source": self.SOURCE, "note": "VIES unexpected error"}
+
+        try:
+            payload = self._build_envelope(cc, num).encode("utf-8")
+            r = self.session.post(VIES_SOAP_ENDPOINT, data=payload, timeout=self.timeout)
+            r.raise_for_status()
+            parsed = self._parse_response(r.content)
+            valid = parsed.get("valid")
+            status = "ok" if valid else ("warning" if valid is False else "unknown")
+            note = "VAT is valid" if valid else ("VAT is NOT valid" if valid is False else "VIES unknown")
+
+            data = {
+                "vat_number": vat_full,
+                "country_code": cc,
+                "request_date": parsed.get("requestDate"),
+                "valid": valid,
+                "name": parsed.get("name"),
+                "address": parsed.get("address"),
+            }
+            return {"status": status, "data": data, "source": self.SOURCE, "note": note}
+        except requests.RequestException as e:
+            return {"status": "unknown", "data": {"error": f"HTTP error: {e}", "used_query": query}, "source": self.SOURCE, "note": "VIES HTTP error"}
+        except Exception as e:
             return {"status": "unknown", "data": {"error": f"Unexpected: {e}", "used_query": query}, "source": self.SOURCE, "note": "VIES unexpected error"}

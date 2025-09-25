@@ -48,6 +48,9 @@ class Config:
     # Sanctions EU specifics
     SANCTIONS_EU_REFRESH = os.getenv("SANCTIONS_EU_REFRESH", "False") in ("True", "true", "1")
     SANCTIONS_EU_FUZZY_THRESHOLD = int(os.getenv("SANCTIONS_EU_FUZZY_THRESHOLD", "92"))
+    SANCTIONS_EU_CSV_URL = os.getenv("SANCTIONS_EU_CSV_URL", "")
+    SANCTIONS_OFAC_CSV_URL = os.getenv("SANCTIONS_OFAC_CSV_URL", "")
+    SANCTIONS_UK_CSV_URL = os.getenv("SANCTIONS_UK_CSV_URL", "")
 
     # HTTP / retries
     EXTERNAL_REQUEST_TIMEOUT = int(os.getenv("EXTERNAL_REQUEST_TIMEOUT", "30"))

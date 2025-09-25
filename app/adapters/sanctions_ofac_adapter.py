@@ -6,7 +6,7 @@ Real OFAC adapter: downloads SDN list (CSV), caches to app/data/ofac_sdn.csv and
 Requires pandas and rapidfuzz.
 """
 
-import os
+import os, time
 from .base import CheckResult
 from flask import current_app
 from ..utils.http import requests_session_with_retries
@@ -18,7 +18,10 @@ except Exception:
     pd = None
 
 DATA_FILE = None
-OFAC_SDN_CSV = 'https://home.treasury.gov/system/files/126/sdn.csv'
+OFAC_SDN_URLS = [
+    'https://home.treasury.gov/system/files/126/sdn.csv',
+    'https://www.treasury.gov/ofac/downloads/sdn.csv',  # fallback
+]
 
 
 class OFACAdapter:
@@ -32,14 +35,37 @@ class OFACAdapter:
             DATA_DIR = current_app.config.get('CACHE_DIR')
             DATA_FILE = os.path.join(DATA_DIR, 'ofac_sdn.csv')
         os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-        if not os.path.exists(DATA_FILE) or current_app.config.get('SANCTIONS_EU_REFRESH'):
-            logger = get_logger()
-            logger.info('Downloading OFAC SDN CSV to %s', DATA_FILE)
-            s = requests_session_with_retries()
-            resp = s.get(OFAC_SDN_CSV, timeout=current_app.config.get('EXTERNAL_REQUEST_TIMEOUT', 30))
-            resp.raise_for_status()
-            with open(DATA_FILE, 'wb') as fh:
-                fh.write(resp.content)
+
+        ttl = int(current_app.config.get('SANCTIONS_OFAC_CACHE_TTL', 24*3600))
+        need = True
+        if os.path.exists(DATA_FILE):
+            age = time.time() - os.path.getmtime(DATA_FILE)
+            if age < ttl and os.path.getsize(DATA_FILE) > 0:
+                need = False
+        if not need:
+            return
+
+        logger = get_logger()
+        logger.info('Downloading OFAC SDN CSV to %s', DATA_FILE)
+        s = requests_session_with_retries()
+        primary = current_app.config.get('SANCTIONS_OFAC_CSV_URL')
+        urls = [primary] if primary else []
+        urls.extend([u for u in OFAC_SDN_URLS if u and u not in urls])
+
+        last_error = None
+        for url in urls:
+            try:
+                resp = s.get(url, timeout=current_app.config.get('EXTERNAL_REQUEST_TIMEOUT', 30))
+                resp.raise_for_status()
+                with open(DATA_FILE, 'wb') as fh:
+                    fh.write(resp.content)
+                return
+            except Exception as e:
+                last_error = e
+                continue
+
+        if not os.path.exists(DATA_FILE):
+            raise RuntimeError(f"Failed to download OFAC SDN CSV: {last_error}")
 
     def _load_df(self):
         self._ensure_sdn()
